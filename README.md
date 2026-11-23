@@ -1,5 +1,45 @@
 # DINAMICA-COBERTURA-FORESTAL-2020-2024
 
+<p align="center">
+  <a href="https://www.inab.gob.gt/">
+    <img src="assets/logos/inab.png" alt="INAB - Instituto Nacional de Bosques" title="INAB - Instituto Nacional de Bosques" height="62" />
+  </a>
+  &nbsp;&nbsp;&nbsp;
+  <a href="https://conap.gob.gt/">
+    <img src="assets/logos/conap.png" alt="CONAP - Consejo Nacional de Áreas Protegidas" title="CONAP - Consejo Nacional de Áreas Protegidas" height="62" />
+  </a>
+  &nbsp;&nbsp;&nbsp;
+  <a href="https://marn.gob.gt/">
+    <img src="assets/logos/marn.png" alt="MARN - Ministerio de Ambiente y Recursos Naturales" title="MARN - Ministerio de Ambiente y Recursos Naturales" height="62" />
+  </a>
+  &nbsp;&nbsp;&nbsp;
+  <a href="https://www.uvg.edu.gt/">
+    <img src="assets/logos/uvg.png" alt="UVG - Universidad del Valle de Guatemala" title="UVG - Universidad del Valle de Guatemala" height="62" />
+  </a>
+</p>
+
+---
+
+<p align="center">
+  <a href="https://earthengine.google.com/">
+    <img src="assets/logos/google_earth_engine.png" alt="Google Earth Engine" title="Google Earth Engine" height="62" />
+  </a>
+  &nbsp;&nbsp;&nbsp;
+  <a href="https://www.collect.earth/">
+    <img src="assets/logos/collect_earth_online.png" alt="Collect Earth Online" title="Collect Earth Online" height="62" />
+  </a>
+  &nbsp;&nbsp;&nbsp;
+  <a href="https://sepal.io/">
+    <img src="assets/logos/sepal.png" alt="SEPAL - Open Foris" title="SEPAL - Open Foris" height="62" />
+  </a>
+  &nbsp;&nbsp;&nbsp;
+  <a href="https://www.esri.com/en-us/arcgis/products/arcgis-pro/overview">
+    <img src="assets/logos/arcgis_pro.png" alt="ArcGIS Pro" title="ArcGIS Pro" height="62" />
+  </a>
+</p>
+
+---
+
 Este repositorio consolida la infraestructura computacional, metodologías y algoritmos aplicados por el Instituto Nacional de Bosques (INAB) para la generación del Mapa de Dinámica de la Cobertura Forestal de Guatemala (Período 2020–2024).
 
 Con el propósito de garantizar la transparencia, reproducibilidad y rigor técnico del monitoreo forestal nacional, se integran tecnologías de procesamiento masivo en la nube (Google Earth Engine, SEPAL) con flujos analíticos avanzados en GEE, SEPAL, Python y automatización geoespacial en ArcPy.
