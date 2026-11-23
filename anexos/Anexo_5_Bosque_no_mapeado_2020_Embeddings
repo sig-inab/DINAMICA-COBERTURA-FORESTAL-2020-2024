@@ -1,0 +1,251 @@
+/* ============================================================
+   DETECCIÓN DE BOSQUE NO MAPEADO - GUATEMALA - AÑO 2020
+   ------------------------------------------------------------
+   Clasifica bosque con Random Forest + embeddings AlphaEarth
+   ÚNICAMENTE dentro de la máscara de no bosque estable, y enmascara
+   el resultado con la capa de café MAGA.
+
+   Resultado: el bosque que no se mapeó en la capa 2020 original
+   (Landsat 8, 30 m), listo para descargar y analizar en ArcGIS Pro.
+
+   Versátil por región: solo cambia REGION_ID.
+   Updated By Javier Montes
+   ============================================================ */
+
+// ============================================================
+// 1. PARÁMETROS
+// ============================================================
+
+var YEAR = 2020;
+var REGION_ID = 1;        // <-- CAMBIA por el "id" de la región REDD
+
+var VALOR_NO_BOSQUE = 2;  // valor del no bosque en Mascara_NoBosque_V30 (verificado: 0 y 2)
+var VALOR_CAFE      = 1;  // valor del café en maga_cafe_2020_rec
+
+var APLICAR_MMU = false;   // el filtro de parches pequeños se hace en ArcGIS Pro
+var MIN_MAPPING_UNIT = 30; // solo aplica si APLICAR_MMU = true
+
+// Pon en true SOLO si necesitas verificar los valores de las máscaras.
+// Estas estadísticas son pesadas y pueden impedir que se dibuje el mapa.
+var DIAGNOSTICO = false;
+
+// ============================================================
+// 2. REGIÓN DE TRABAJO
+// ============================================================
+
+var reddRegions = ee.FeatureCollection(
+  'users/inabsigguatemala/InformacionBase/Propuesta_subnac_un2021_REDD'
+);
+
+var regionFeature = reddRegions.filter(ee.Filter.eq('id', REGION_ID));
+var regionGeom = regionFeature.geometry();
+
+Map.centerObject(regionFeature, 9);
+Map.addLayer(regionFeature, {color: 'red'}, 'Región REDD ' + REGION_ID, true, 0.5);
+
+var planet2020 = ee.Image('users/inabsigguatemala/planet/Planet_mosaic_2021-12-09_07-10-28');
+Map.addLayer(planet2020.clip(regionGeom), imageVisParam3, 'Planet 2020');
+
+// ============================================================
+// 3. MÁSCARAS -> ÁREA DE BÚSQUEDA
+// ------------------------------------------------------------
+// El .unmask(0) es indispensable: los assets vienen enmascarados
+// fuera de su clase, y en GEE toda operación sobre un píxel
+// enmascarado devuelve un píxel enmascarado. Sin esto, el filtro
+// de café se anula silenciosamente.
+// ============================================================
+
+var mascaraNoBosque = ee.Image('projects/my-project-geebook/assets/Mascara_NoBosque_V30')
+  .select(0).clip(regionGeom).unmask(0);
+
+var mascaraCafeMaga = ee.Image('projects/my-project-geebook/assets/maga_cafe_2020_rec')
+  .select(0).clip(regionGeom).unmask(0);
+
+var esNoBosque = mascaraNoBosque.eq(VALOR_NO_BOSQUE);
+var esCafe     = mascaraCafeMaga.eq(VALOR_CAFE);
+
+// Zona donde se va a clasificar: no bosque estable, sin café
+var areaBusqueda = esNoBosque.and(esCafe.not());
+
+Map.addLayer(esNoBosque.selfMask(), {palette: ['ffff00']}, 'No bosque estable', false);
+Map.addLayer(esCafe.selfMask(), {palette: ['8a4b08']}, 'Café MAGA (excluido)', false);
+Map.addLayer(areaBusqueda.selfMask(), {palette: ['00ffff']}, 'Área de búsqueda', false);
+
+if (DIAGNOSTICO) {
+  print('Valores no bosque:', mascaraNoBosque.reduceRegion({
+    reducer: ee.Reducer.frequencyHistogram(),
+    geometry: regionGeom, scale: 100, tileScale: 16, bestEffort: true, maxPixels: 1e9
+  }));
+  print('Valores café:', mascaraCafeMaga.reduceRegion({
+    reducer: ee.Reducer.frequencyHistogram(),
+    geometry: regionGeom, scale: 100, tileScale: 16, bestEffort: true, maxPixels: 1e9
+  }));
+}
+
+// ============================================================
+// 4. SENTINEL-2 (guía visual para el muestreo)
+// ============================================================
+
+function maskS2clouds(image) {
+  var qa = image.select('QA60');
+  var mask = qa.bitwiseAnd(1 << 10).eq(0).and(qa.bitwiseAnd(1 << 11).eq(0));
+  return image.updateMask(mask).divide(10000);
+}
+
+var s2 = ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED')
+  .filterDate(YEAR + '-01-01', (YEAR + 1) + '-01-01')
+  .filterBounds(regionGeom)
+  .filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE', 30))
+  .map(maskS2clouds)
+  .median()
+  .clip(regionGeom);
+
+Map.addLayer(s2, imageVisParam, 'Sentinel-2 ' + YEAR + ' (guía)');
+
+// ============================================================
+// 5. EMBEDDINGS ALPHAEARTH
+// ============================================================
+
+var embeddingImage = ee.ImageCollection('GOOGLE/SATELLITE_EMBEDDING/V1/ANNUAL')
+  .filterDate(YEAR + '-01-01', (YEAR + 1) + '-01-01')
+  .filterBounds(regionGeom)
+  .mosaic()
+  .clip(regionGeom);
+
+var bandNames = embeddingImage.bandNames();
+print('Bandas del embedding AlphaEarth:', bandNames);
+
+// Solo se clasifica dentro del área de búsqueda
+var embeddingBusqueda = embeddingImage.updateMask(areaBusqueda);
+
+// ------------------------------------------------------------
+// 5.1 VISUALIZACIÓN DEL EMBEDDING
+// ------------------------------------------------------------
+// Las 64 bandas (A00-A63) son adimensionales y están normalizadas
+// aprox. entre -1 y 1. Ninguna terna es "la correcta": conviene
+// alternar entre varias combinaciones para ver qué separa mejor el
+// bosque en tu región. Ajusta VIS_EMB si el contraste queda plano.
+// ------------------------------------------------------------
+
+var VIS_EMB = {min: -0.25, max: 0.25};
+
+// Combinación por defecto
+Map.addLayer(embeddingImage.select(['A01', 'A16', 'A09']), VIS_EMB,
+  'Embedding A01/A16/A09', true);
+
+// Combinaciones alternativas (actívalas en el panel de capas)
+Map.addLayer(embeddingImage.select(['A00', 'A08', 'A24']), VIS_EMB,
+  'Embedding A00/A08/A24', false);
+
+Map.addLayer(embeddingImage.select(['A32', 'A40', 'A55']), VIS_EMB,
+  'Embedding A32/A40/A55', false);
+
+// Embedding recortado al área de búsqueda: así ves exactamente la
+// información que el Random Forest está usando para decidir
+Map.addLayer(embeddingBusqueda.select(['A01', 'A16', 'A09']), VIS_EMB,
+  'Embedding DENTRO del área de búsqueda', false);
+
+// Inspector: al hacer clic en el mapa, la pestaña Inspector muestra
+// los 64 valores del píxel. Útil para comparar la firma de un
+// bosque que sí se mapeó contra uno que quedó fuera.
+
+// ============================================================
+// 6. MUESTRAS
+// ------------------------------------------------------------
+// En "Geometry Imports" crea 3 capas como FeatureCollection:
+//   "bosque", "no_bosque", "agua"
+// Clases: 0 = Bosque, 2 = No bosque, 3 = Agua
+//
+// Prioriza muestras de bosque del tipo que Landsat 30 m no captó:
+// parches pequeños, bosque ripario, bosque secundario.
+// ============================================================
+
+var muestras = bosque.map(function(f) { return f.set('class', 0); })
+  .merge(no_bosque.map(function(f) { return f.set('class', 2); }))
+  .merge(agua.map(function(f) { return f.set('class', 3); }));
+
+// ============================================================
+// 7. ENTRENAMIENTO
+// ============================================================
+
+var muestrasConValores = embeddingImage.sampleRegions({
+  collection: muestras,
+  properties: ['class'],
+  scale: 10,
+  tileScale: 16,
+  geometries: true
+}).randomColumn('random', 42);
+
+var entrenamiento = muestrasConValores.filter(ee.Filter.lt('random', 0.7));
+var validacion    = muestrasConValores.filter(ee.Filter.gte('random', 0.7));
+
+var clasificadorRF = ee.Classifier.smileRandomForest({
+  numberOfTrees: 200,
+  seed: 42
+}).train({
+  features: entrenamiento,
+  classProperty: 'class',
+  inputProperties: bandNames
+});
+
+// ============================================================
+// 8. CLASIFICACIÓN Y RESULTADO
+// ============================================================
+
+var clasificacion = embeddingBusqueda.classify(clasificadorRF);
+
+// Bosque detectado dentro del área de búsqueda
+var bosqueDetectado = clasificacion.eq(0).updateMask(areaBusqueda);
+
+// Filtro de parches pequeños.
+// DESACTIVADO por defecto: connectedPixelCount se evalúa a la escala
+// de visualización, no a 10 m, y forzar la proyección revienta la
+// memoria en regiones grandes. El filtro de área mínima conviene
+// aplicarlo en ArcGIS Pro sobre el ráster ya descargado
+// (Region Group -> Set Null por conteo, o Majority Filter).
+if (APLICAR_MMU) {
+  var tamanoParche = bosqueDetectado.unmask(0)
+    .connectedPixelCount({maxSize: MIN_MAPPING_UNIT, eightConnected: true});
+  bosqueDetectado = bosqueDetectado.updateMask(tamanoParche.gte(MIN_MAPPING_UNIT));
+}
+
+// Enmascarado final con café (redundante pero explícito)
+var bosqueNoMapeado = bosqueDetectado.updateMask(esCafe.not())
+  .selfMask()
+  .rename('bosque_no_mapeado');
+
+Map.addLayer(bosqueNoMapeado, {palette: ['ff00ff']}, 'BOSQUE NO MAPEADO');
+
+// ============================================================
+// 9. VALIDACIÓN (ligera, no afecta el renderizado del mapa)
+// ============================================================
+
+var matrizConfusion = validacion.classify(clasificadorRF)
+  .errorMatrix('class', 'classification');
+
+print('Matriz de confusión:', matrizConfusion);
+print('Exactitud global:', matrizConfusion.accuracy());
+print('Kappa:', matrizConfusion.kappa());
+print('Exactitud del productor:', matrizConfusion.producersAccuracy());
+print('Exactitud del usuario:', matrizConfusion.consumersAccuracy());
+
+// ============================================================
+// 10. EXPORTACIÓN (áreas y estadísticas se calculan en ArcGIS Pro)
+// ============================================================
+
+Export.image.toDrive({
+  image: bosqueNoMapeado.toByte(),
+  description: 'Bosque_no_mapeado_' + YEAR + '_Region' + REGION_ID,
+  folder: 'GEE_Exports',
+  fileNamePrefix: 'bosque_no_mapeado_' + YEAR + '_region' + REGION_ID,
+  region: regionGeom,
+  scale: 10,
+  maxPixels: 1e13,
+  crs: 'EPSG:4326'
+});
+
+Export.table.toDrive({
+  collection: muestras,
+  description: 'Muestras_' + YEAR + '_Region' + REGION_ID,
+  fileFormat: 'SHP'
+});
